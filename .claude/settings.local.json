@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip --version)",
+      "WebSearch",
+      "Bash(python main.py)"
+    ]
+  }
+}
