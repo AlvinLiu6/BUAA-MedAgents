@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
 # Ensure Gradio can connect to localhost (fixes 502 in proxy environments)
@@ -17,7 +18,14 @@ from agents import (
     RecordAgent, DiagnosisAgent, ReviewAgent,
 )
 from orchestrator import PipelineOrchestrator
-from ui.app import create_ui, CUSTOM_CSS
+from ui.app import create_ui, get_diagnosis_css
+from ui.portal import create_portal, get_portal_css
+from ui.profile_store import load_profile
+
+# Ports
+PORTAL_PORT = 7860
+DIAGNOSIS_PORT = 7861
+
 
 
 def main():
@@ -30,18 +38,21 @@ def main():
     )
 
     logger = logging.getLogger("MedAgent")
-    logger.info("Initializing MedAgent...")
+    logger.info("Initializing BUAA-MedAgents...")
     logger.info("LLM Model: %s", settings.openai_model)
+    logger.info("Vision Model: %s @ %s", settings.vision_model, settings.vision_base_url)
     logger.info("XrayGLM Mode: %s", settings.xrayglm_mode)
     logger.info("Max Review Rounds: %d", settings.max_review_rounds)
 
-    # Initialize components
+    # Load persistent patient profile from disk (shared between portal & diagnosis)
+    patient_profile: dict = load_profile()
+    logger.info("Patient profile loaded from disk: %s", patient_profile)
+
+    # Build orchestrator (also exposes the main LLM for portal news)
     llm = LLMClient(settings)
     vision_llm = LLMClient(settings, use_vision_model=True)
-    logger.info("Vision Model: %s @ %s", settings.vision_model, settings.vision_base_url)
     xrayglm = create_xrayglm(settings)
 
-    # Build pipeline
     orchestrator = PipelineOrchestrator(
         triage=TriageAgent(llm),
         image_agent=ImageAgent(xrayglm, llm),
@@ -54,12 +65,38 @@ def main():
         max_rounds=settings.max_review_rounds,
     )
 
-    # Launch UI
-    app = create_ui(orchestrator)
-    app.launch(
+    # Build diagnosis UI (runs on a background thread, separate port)
+    diagnosis_app = create_ui(orchestrator,
+                              patient_profile=patient_profile,
+                              portal_port=PORTAL_PORT)
+    diagnosis_started = threading.Event()
+
+    def _run_diagnosis():
+        diagnosis_app.launch(
+            server_name="127.0.0.1",
+            server_port=DIAGNOSIS_PORT,
+            prevent_thread_lock=True,
+            quiet=True,
+            css=get_diagnosis_css(),
+        )
+        diagnosis_started.set()
+
+    diag_thread = threading.Thread(target=_run_diagnosis, daemon=True)
+    diag_thread.start()
+    diagnosis_started.wait(timeout=15)
+    logger.info("Diagnosis system ready at http://127.0.0.1:%d", DIAGNOSIS_PORT)
+
+    # Build and launch portal (main UI, foreground)
+    portal = create_portal(
+        diagnosis_port=DIAGNOSIS_PORT,
+        patient_profile=patient_profile,
+        llm=llm,
+    )
+    logger.info("Launching portal at http://127.0.0.1:%d", PORTAL_PORT)
+    portal.launch(
         server_name="127.0.0.1",
-        server_port=7860,
-        css=CUSTOM_CSS,
+        server_port=PORTAL_PORT,
+        css=get_portal_css(),
     )
 
 

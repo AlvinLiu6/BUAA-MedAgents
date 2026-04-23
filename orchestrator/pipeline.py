@@ -343,18 +343,36 @@ class PipelineOrchestrator:
                     message=f"正在并行处理：{'、'.join(tasks_desc)}...",
                 )
 
-                gather_tasks = [
-                    self.image_agent.run(xray_files),
-                    self.lab_agent.run(lab_files, chief_complaint),
-                    self.record_agent.run(record_files, chief_complaint),
-                ]
+                gather_tasks = []
+                task_labels = []
+                if xray_files:
+                    gather_tasks.append(self.image_agent.run(xray_files))
+                    task_labels.append("xray")
+                if lab_files:
+                    gather_tasks.append(self.lab_agent.run(lab_files, chief_complaint))
+                    task_labels.append("lab")
+                if record_files:
+                    gather_tasks.append(self.record_agent.run(record_files, chief_complaint))
+                    task_labels.append("record")
                 if other_img_files:
                     gather_tasks.append(self._extract_other_images(other_img_files))
+                    task_labels.append("other")
 
-                results = await asyncio.gather(*gather_tasks)
-                xray_results, lab_results, record_results = results[0], results[1], results[2]
-                if other_img_files:
-                    other_img_text = results[3]
+                xray_results, lab_results, record_results = [], [], []
+                if gather_tasks:
+                    results = await asyncio.gather(*gather_tasks, return_exceptions=True)
+                    for label, result in zip(task_labels, results):
+                        if isinstance(result, BaseException):
+                            logger.error("Sub-agent [%s] failed: %s", label, result)
+                            continue
+                        if label == "xray":
+                            xray_results = result
+                        elif label == "lab":
+                            lab_results = result
+                        elif label == "record":
+                            record_results = result
+                        elif label == "other":
+                            other_img_text = result
             else:
                 xray_results, lab_results, record_results = [], [], []
 

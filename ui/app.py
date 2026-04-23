@@ -1,11 +1,10 @@
 import logging
-import os
-import threading
 
 import gradio as gr
 
 from models import ConsultationLog, ReviewVerdict
 from orchestrator.pipeline import PipelineOrchestrator, EventType
+from ui.health_store import load_health, save_health, add_medical_record, today_str
 
 logger = logging.getLogger(__name__)
 
@@ -257,12 +256,12 @@ form > * {
     border: none !important;
 }
 .btn-new-consult:hover { background: #245089 !important; }
-.btn-exit {
+.btn-back {
     background: transparent !important;
-    color: #b04040 !important;
-    border: 1px solid #d8a0a0 !important;
+    color: #2d5f9e !important;
+    border: 1px solid #b0c4de !important;
 }
-.btn-exit:hover { background: #fbeaea !important; border-color: #c06060 !important; }
+.btn-back:hover { background: #eef3ff !important; border-color: #2d5f9e !important; }
 
 /* === Personal info inputs === */
 .info-input input,
@@ -508,7 +507,14 @@ TAG_MAP = {
 # UI
 # ---------------------------------------------------------------------------
 
-def create_ui(orchestrator: PipelineOrchestrator) -> gr.Blocks:
+def get_diagnosis_css() -> str:
+    """Return the CSS for the diagnosis UI (needed for Gradio 6 launch())."""
+    return CUSTOM_CSS
+
+
+def create_ui(orchestrator: PipelineOrchestrator,
+              patient_profile: dict | None = None,
+              portal_port: int = 7860) -> gr.Blocks:
 
     with gr.Blocks(title="MedAgent - 智能医疗辅助诊断") as app:
 
@@ -577,10 +583,9 @@ def create_ui(orchestrator: PipelineOrchestrator) -> gr.Blocks:
                 gr.HTML('<div style="flex:1"></div>')  # spacer
                 gr.HTML('<div class="sep"></div>')
 
-                # Exit
-                exit_btn = gr.Button("退出系统",
-                                     elem_classes=["sidebar-btn", "btn-exit"])
-                exit_status = gr.HTML("")
+                # Back to portal
+                back_btn = gr.Button("← 返回主菜单",
+                                     elem_classes=["sidebar-btn", "btn-back"])
 
             # ======= INPUT PANEL (28%) =======
             with gr.Column(scale=28, min_width=240, elem_classes=["input-panel"]):
@@ -783,6 +788,7 @@ def create_ui(orchestrator: PipelineOrchestrator) -> gr.Blocks:
 
                 elif event.type == EventType.COMPLETE:
                     log: ConsultationLog = event.data["log"]
+                    patient_obj = event.data.get("patient")
                     _replace_or_append(messages, {
                         "role": "assistant",
                         "content": format_final_report(log),
@@ -792,7 +798,31 @@ def create_ui(orchestrator: PipelineOrchestrator) -> gr.Blocks:
                     messages.append({"role": "assistant",
                                      "content": "💬 诊断完成。如有疑问可继续提问，或点击「新建会诊」开始新的诊断。"})
                     ctx = {**ctx, "mode": "post_diagnosis", "log": log,
-                           "patient": event.data.get("patient"), "resume_state": None}
+                           "patient": patient_obj, "resume_state": None}
+
+                    # Auto-save diagnosis to health records
+                    try:
+                        d = log.final_diagnosis
+                        chief = patient_obj.chief_complaint if patient_obj else ctx.get("complaint", "")
+                        symptom = chief
+                        if "【主诉】" in symptom:
+                            symptom = symptom.split("【主诉】", 1)[1].strip()
+                        health = load_health()
+                        add_medical_record(
+                            health,
+                            record_date=today_str(),
+                            symptom=symptom[:200],
+                            diagnosis=d.diagnosis,
+                            treatment="；".join(d.treatment_suggestions),
+                            note=f"置信度：{d.confidence}",
+                            source="diagnosis",
+                        )
+                        save_health(health)
+                        messages.append({"role": "assistant",
+                                         "content": "📋 已自动保存至「健康档案」，可在主界面查看和编辑。"})
+                    except Exception as e:
+                        logger.warning("Failed to auto-save medical record: %s", e)
+
                     yield messages, ctx, "", None
 
         # ----------------------------------------------------------------
@@ -807,15 +837,10 @@ def create_ui(orchestrator: PipelineOrchestrator) -> gr.Blocks:
             return [], empty_ctx, "", None
 
         # ----------------------------------------------------------------
-        # Exit system
+        # Back to portal
         # ----------------------------------------------------------------
-        def on_exit():
-            def _kill():
-                import time
-                time.sleep(0.6)
-                os._exit(0)
-            threading.Thread(target=_kill, daemon=True).start()
-            return gr.update(value="<span style='color:#b04040;font-size:0.82em'>已退出…</span>")
+        def on_back():
+            return None  # JS handles navigation
 
         # ── Wire events ─────────────────────────────────────────────────
         personal_inputs = [gender, age, height_cm, weight_kg, allergy_input, past_history]
@@ -829,6 +854,24 @@ def create_ui(orchestrator: PipelineOrchestrator) -> gr.Blocks:
             fn=on_new, inputs=[],
             outputs=[chatbot, context_state, text_input, file_upload],
         )
-        exit_btn.click(fn=on_exit, inputs=[], outputs=[exit_status])
+        back_btn.click(
+            fn=on_back, inputs=[], outputs=[],
+            js=f"() => {{ window.location.href = 'http://127.0.0.1:{portal_port}'; }}",
+        )
+
+        # ── Load shared profile on page open ──
+        def load_profile():
+            if not patient_profile:
+                return [gr.update()] * 6
+            return [
+                gr.update(value=patient_profile.get("gender")),
+                gr.update(value=patient_profile.get("age")),
+                gr.update(value=patient_profile.get("height")),
+                gr.update(value=patient_profile.get("weight")),
+                gr.update(value=patient_profile.get("allergy", "")),
+                gr.update(value=patient_profile.get("past_history", "")),
+            ]
+
+        app.load(fn=load_profile, inputs=[], outputs=personal_inputs)
 
     return app

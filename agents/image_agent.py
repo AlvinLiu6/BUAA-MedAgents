@@ -21,13 +21,28 @@ class ImageAgent(BaseAgent):
             raw_text = await self.xrayglm.analyze(f.file_path)
 
             abnormalities = []
+            _NEGATIVE_PREFIXES = (
+                "未见", "未发现", "无明显", "无", "不伴", "不存在",
+                "未及", "未累及", "排除", "未提示", "无显著",
+            )
+            _ABNORMAL_KW = [
+                "异常", "增粗", "模糊影", "增大", "积液", "结节",
+                "肿块", "钙化", "骨折", "狭窄", "增宽", "炎症",
+            ]
             for line in raw_text.split("\n"):
                 line = line.strip()
-                if line and any(kw in line for kw in [
-                    "异常", "增粗", "模糊影", "增大", "积液", "结节",
-                    "肿块", "钙化", "骨折", "狭窄", "增宽", "炎症",
-                ]):
+                if not line:
+                    continue
+                for kw in _ABNORMAL_KW:
+                    idx = line.find(kw)
+                    if idx == -1:
+                        continue
+                    # 取关键词前面的片段，检查是否包含否定词
+                    prefix = line[:idx]
+                    if any(neg in prefix for neg in _NEGATIVE_PREFIXES):
+                        continue
                     abnormalities.append(line)
+                    break
 
             results.append(XrayFindings(
                 image_path=f.file_path,

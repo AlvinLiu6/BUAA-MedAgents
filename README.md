@@ -1,14 +1,15 @@
-# BUAA-MedAgents · 多智能体医疗诊断辅助系统
+# BUAA-MedAgents · 多智能体健康管理与诊断系统
 
-一个基于多智能体协作的医疗诊断辅助系统。通过 LLM A（诊断医师）与 LLM B（质控医师）的双重博弈机制，为用户提供专业的诊断推理和证据支撑。支持医学影像分析、化验单解读、病历提取与交互式追问。
+一个基于多智能体协作的个人健康管理 + 智能诊断系统。主界面提供九大健康模块（首页健康助手、个人信息、运动、营养、睡眠、心理、用药、健康档案、慢病管理）；诊疗系统采用 LLM A（诊断医师）与 LLM B（质控医师）的双重博弈机制，并能将诊断结果自动归档到健康档案。
 
+---
 
 ## ⚠️ 免责声明
 
 **本系统不构成医疗意见，不能替代专业医师的诊断和治疗建议。**
 
-- 本系统仅作为辅助诊断工具，用于学习和科研目的
-- 系统输出的诊断结论基于大语言模型推理，可能存在错误或遗漏
+- 本系统仅作为辅助工具，用于学习和科研目的
+- 系统输出的诊断和建议基于大语言模型推理，可能存在错误或遗漏
 - **任何医疗决策必须由持证医师根据患者的实际情况独立判断**
 - 对于紧急医疗情况，请立即前往医院或拨打急救电话
 - 使用本系统导致的任何健康问题，开发者不承担任何责任
@@ -19,26 +20,77 @@
 
 ## ✨ 核心功能
 
-### 1. 多源数据融合
+### 🏠 健康管理主门户（Portal）
+
+主门户以左侧导航 + 右侧内容区的布局组织九个功能模块，所有数据本地持久化存储在 `~/.medagent/` 下。
+
+#### 1. 智能健康助手（首页）
+- 实时健康咨询聊天框，LLM 可读取所有模块的数据（个人信息、运动、睡眠、用药、心情、病史、慢病等）
+- 会话历史在切换模块时保留，退出后清空
+- 自动识别当天日期，重点关注近 1-2 周的数据，旧记录仅在用户主动询问或存在长期趋势时提及
+- 首页还展示每日健康资讯与个性化提醒（服药提醒、运动打卡等）
+
+#### 2. 个人信息
+- 记录性别、年龄、身高、体重、过敏史、既往病史
+- 信息自动同步至智能诊疗系统，无需重复输入
+
+#### 3. 运动管理
+- 制定个性化运动计划（由 LLM 根据个人信息生成）
+- 每日打卡，支持日历视图查看打卡记录
+
+#### 4. 营养管理
+- 生成个性化膳食建议
+- 依据身体数据（BMI、过敏）个性化调整
+
+#### 5. 睡眠管理
+- 记录每晚的睡眠时长与质量
+- 日历可视化，支持记录删除
+
+#### 6. 心理健康
+- 每日心情打卡（1-5 分 + 备注）
+- 独立的心理健康聊天助手，会话记录跨模块保留
+- 心情历史以点阵概览 + 详细列表呈现，支持逐条删除
+
+#### 7. 用药管理
+- 录入常用药品（药名、剂量、服药时间、频次）
+- 每日服药打卡
+- 自动识别未打卡的药品并在首页提醒
+- **与慢病管理联动**：从慢病同步过来的药品会带有橙色标签，展示所属慢病
+
+#### 8. 健康档案
+- 手动添加病历记录（日期、症状、诊断、治疗、医院、备注）
+- **自动归档**：智能诊疗系统给出最终诊断后，会自动将其写入健康档案
+- 支持编辑、删除，卡片式展示
+
+#### 9. 慢病管理
+- 管理慢性疾病：病症名称、确诊日期、关联用药、指标监测、备注
+- **关联用药子表**：逐条添加（药名 / 剂量 / 频次），支持逐条删除
+- **指标监测子表**：逐条添加（指标名 / 目标值 / 检测频次）
+- 保存慢病时自动把关联用药同步到用药管理全局列表（带 `chronic_id` 回溯源头）
+
+### 🩺 智能诊疗子系统（Diagnosis）
+
+独立端口运行（默认 7861），从主门户的「智能诊疗」入口进入。
+
+#### 多源数据融合
 - **医学影像分析**：通过 XrayGLM 自动分析胸部 X 光片
 - **化验单解读**：使用视觉 LLM（Qwen-VL）提取并分析化验指标
-- **病历信息提取**：自动识别既往诊断、用药、过敏史等关键信息
+- **病历信息提取**：自动识别既往诊断、用药、过敏史等
 - **其他图片识别**：对患者上传的其他医学文档进行内容识别
 
-### 2. 智能诊断推理
-- **LLM A（诊断医师）**：基于患者主诉、检查数据进行综合分析，可主动向患者追问或请求子Agent补充分析
-- **LLM B（质控医师）**：从安全性和逻辑性两个维度审核 LLM A 的诊断，确保方案的可靠性
-- **博弈机制**：两个 LLM 最多进行 3 轮的诊断-审核循环，最终给出经过严格质控的诊断结论
+#### 双重博弈机制
+- **LLM A（诊断医师）**：基于主诉、检查数据进行综合分析
+- **LLM B（质控医师）**：从安全性与逻辑性两个维度审核 A 的诊断
+- **最多 3 轮博弈**：未通过审核则 A 据反馈再诊断，直到达成共识或达上限
 
-### 3. 交互式咨询
-- **补充信息采集**：LLM A 可按需向患者追问症状细节、病史等关键信息
-- **后续咨询**：诊断完成后，患者可继续提问，医生给出针对性解答
-- **新建咨询**：支持清空历史记录，开始新的诊断流程
+#### 交互式追问
+- 信息不足时，LLM A 可向患者追问（标注「重要」的问题诊断必需）
+- 所有「重要」问题回答后必须直接给出诊断，不再反复追问
+- 也可向子 Agent 请求更细粒度分析（如要求影像 Agent 重点看右下肺野）
 
-### 4. 个性化患者管理
-- 记录患者的性别、年龄、身高、体重
-- 管理过敏史和既往病史
-- 自动在诊断时融入患者基本信息
+#### 后续咨询 & 自动归档
+- 诊断完成后可继续提问，医生基于已有结论针对性作答
+- 最终诊断自动写入主门户的「健康档案」
 
 ---
 
@@ -46,47 +98,60 @@
 
 ```
 MedAgent/
-├── config.py                    # Pydantic 配置管理（API key、模型参数等）
-├── main.py                      # 应用入口
-├── requirements.txt             # 项目依赖
-├── .env                         # 环境变量配置（gitignore）
-├── .gitignore                   # Git 忽略文件
+├── config.py                    # Pydantic 配置管理
+├── main.py                      # 应用入口（双端口：门户 7860 / 诊疗 7861）
+├── requirements.txt
+├── .env                         # 环境变量（gitignore）
 │
-├── models/                      # 数据模型（Pydantic v2）
-│   ├── patient.py              # 患者信息、上传文件
-│   ├── agent_output.py         # 各子Agent的输出模型
-│   ├── diagnosis.py            # 诊断结果模型
-│   └── review.py               # 审核结果模型
+├── models/                      # Pydantic v2 数据模型
+│   ├── patient.py
+│   ├── agent_output.py
+│   ├── diagnosis.py
+│   └── review.py
 │
-├── agents/                      # 多个专业Agent
-│   ├── base.py                 # Agent 基类
-│   ├── triage.py               # 分诊Agent：文件分类、意图识别
-│   ├── image_agent.py          # 影像Agent：调用 XrayGLM 分析 X 光
-│   ├── lab_agent.py            # 化验Agent：使用 Qwen-VL 提取化验单
-│   ├── record_agent.py         # 病历Agent：提取病历关键信息
-│   ├── diagnosis_agent.py      # LLM A：综合诊断推理
-│   └── review_agent.py         # LLM B：质量审核
+├── agents/                      # 各专业 Agent
+│   ├── base.py
+│   ├── triage.py                # 分诊：文件分类、意图识别
+│   ├── image_agent.py           # 影像 Agent（调用 XrayGLM）
+│   ├── lab_agent.py             # 化验 Agent（Qwen-VL）
+│   ├── record_agent.py          # 病历 Agent
+│   ├── diagnosis_agent.py       # LLM A：诊断
+│   └── review_agent.py          # LLM B：审核
 │
 ├── orchestrator/
-│   └── pipeline.py             # 流水线编排：协调各Agent执行顺序、数据流
+│   └── pipeline.py              # 流水线编排
 │
 ├── llm/
-│   └── openai_client.py        # OpenAI 兼容 API 客户端（支持 DeepSeek、DashScope）
+│   └── openai_client.py         # OpenAI 兼容客户端（支持 DeepSeek / DashScope）
 │
-├── xrayglm/                     # XrayGLM 集成层
-│   ├── interface.py            # Protocol 抽象接口
-│   ├── mock_model.py           # Mock 实现（开发测试）
-│   └── local_model.py          # 本地部署实现
+├── xrayglm/                     # XrayGLM 集成
+│   ├── interface.py             # Protocol 抽象
+│   ├── mock_model.py            # Mock（开发）
+│   └── local_model.py           # 本地部署
 │
-├── ui/
-│   └── app.py                  # Gradio 6.x 网页界面（3列布局）
+├── ui/                          # 前端
+│   ├── portal.py                # 主门户（九大模块）
+│   ├── app.py                   # 诊疗子系统
+│   ├── profile_store.py         # 个人信息持久化
+│   └── health_store.py          # 健康数据持久化（运动/睡眠/用药/病历/慢病…）
 │
-└── prompts/                     # LLM 提示词
-    ├── triage.txt              # 分诊提示词
-    ├── diagnosis.txt           # LLM A 诊断提示词
-    ├── review.txt              # LLM B 审核提示词
-    ├── lab_extraction.txt      # 化验提取提示词
-    └── record_extraction.txt   # 病历提取提示词
+└── prompts/                     # 外置提示词
+    ├── triage.txt
+    ├── diagnosis.txt
+    ├── review.txt
+    ├── lab_extraction.txt
+    └── record_extraction.txt
+```
+
+### 数据存储
+
+所有个人数据保存在用户目录下，不上传任何云端：
+
+```
+~/.medagent/
+├── patient_profile.json    # 性别、年龄、身高、体重、过敏、既往史
+└── health_data.json        # 运动计划、打卡、睡眠、营养、心情、用药、
+                            # 服药打卡、病历、慢病
 ```
 
 ---
@@ -101,25 +166,17 @@ MedAgent/
 ### 安装
 
 ```bash
-# 克隆仓库
-git clone https://github.com/your-username/BUAA-MedAgents.git
+git clone https://github.com/AlvinLiu6/BUAA-MedAgents.git
 cd BUAA-MedAgents
-
-# 安装依赖
 pip install -r requirements.txt
 ```
 
 ### 配置
 
-复制 `.env.example` 到 `.env` 并填入你的 API 密钥：
+创建 `.env`：
 
-```bash
-cp .env.example .env
-```
-
-编辑 `.env`：
-```
-# 主 LLM（诊断、审核）
+```ini
+# 主 LLM（诊断、审核、健康助手）
 OPENAI_API_KEY=your_deepseek_api_key
 OPENAI_MODEL=deepseek-reasoner
 OPENAI_BASE_URL=https://api.deepseek.com/v1
@@ -130,12 +187,12 @@ VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 VISION_MODEL=qwen-vl-plus
 
 # XrayGLM 配置
-XRAYGLM_MODE=mock          # "mock" 或 "local"
+XRAYGLM_MODE=mock                # mock | local
 XRAYGLM_CHECKPOINT_PATH=./checkpoints/XrayGLM
 XRAYGLM_PROMPT=详细描述这张胸部X光片的诊断结果
 
 # 诊断参数
-MAX_REVIEW_ROUNDS=3        # LLM A/B 的最大博弈轮数
+MAX_REVIEW_ROUNDS=3              # LLM A/B 最大博弈轮数
 LOG_LEVEL=INFO
 ```
 
@@ -145,40 +202,29 @@ LOG_LEVEL=INFO
 python main.py
 ```
 
-打开浏览器访问 `http://127.0.0.1:7860`
+启动后：
+- 主门户：<http://127.0.0.1:7860>
+- 诊疗子系统：<http://127.0.0.1:7861>（由主门户内嵌进入）
 
 ---
 
 ## 💻 使用流程
 
-1. **输入患者信息**
-   - 在左侧边栏填入患者基本信息（性别、年龄、身高、体重、过敏史、既往病史）
-   - 在中间面板输入主诉（症状描述）
+### 日常健康管理
+1. 在「个人信息」完善基础数据（性别、年龄、身高、体重、过敏史）
+2. 在「运动 / 营养」生成个性化计划；每日在运动模块打卡
+3. 睡眠、心情、用药各模块记录当日情况
+4. 慢病患者在「慢病管理」录入病症、关联用药、指标；保存后用药会自动出现在用药管理中
+5. 随时在首页咨询健康助手，助手能读取所有数据给出针对性建议
 
-2. **上传医学文件**
-   - 上传 X 光片、化验单、病历等医学文件
-   - 为每个文件选择合适的标签（或由系统自动分类）
-
-3. **提交诊断请求**
-   - 点击"发送"按钮
-   - 系统依次执行：
-     - **分诊**：文件分类、主诉分析
-     - **数据提取**：各子Agent 并行处理（影像、化验、病历）
-     - **LLM A 诊断**：基于提取结果进行诊断推理
-     - **LLM B 审核**：质量控制
-     - 必要时重复诊断-审核循环
-
-4. **查看诊断结果**
-   - 右侧面板显示实时会诊过程
-   - 最终报告包含：诊断结论、置信度、证据依据、治疗建议
-   - 可点击"推理详情"查看 LLM A/B 的完整对话记录
-
-5. **后续咨询**
-   - 诊断完成后，可继续在输入框提问
-   - 医生会基于诊断结果给出针对性回答
-
-6. **开始新诊断**
-   - 点击"新建会诊"清空历史，开始新的诊断
+### 智能诊疗
+1. 主门户点击「🩺 智能诊疗」进入诊疗系统
+2. 左侧补充或确认患者信息，中间输入主诉并上传医学文件（X 光片、化验单、病历…）
+3. 点击「发送」，系统依次执行：分诊 → 并行数据提取 → LLM A 诊断 → LLM B 审核，必要时循环
+4. LLM A 若认为信息不足会追问；「重要」问题全部回答后必出诊断
+5. 结论含：诊断、置信度、证据依据、治疗建议；完整会诊记录可展开查看
+6. 诊断结果自动写入「健康档案」
+7. 可继续在输入框追问；或点「新建会诊」清空历史
 
 ---
 
@@ -186,20 +232,20 @@ python main.py
 
 ### LLM 选项
 
-**主 LLM（诊断和审核）**
-- **DeepSeek**（推荐）：`openai-reasoner` 具有强大的推理能力
+**主 LLM（诊断、审核、健康助手）**
+- **DeepSeek**（推荐，推理能力强）
   ```
   OPENAI_BASE_URL=https://api.deepseek.com/v1
   OPENAI_MODEL=deepseek-reasoner
   ```
-- **OpenAI**：GPT-4o
+- **OpenAI GPT-4o**
   ```
   OPENAI_BASE_URL=https://api.openai.com/v1
   OPENAI_MODEL=gpt-4o
   ```
 
 **视觉 LLM（图像识别）**
-- **Qwen-VL**（推荐）：阿里云 DashScope
+- **Qwen-VL**（推荐，阿里云 DashScope）
   ```
   VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
   VISION_MODEL=qwen-vl-plus
@@ -207,65 +253,49 @@ python main.py
 
 ### XrayGLM 部署
 
-**开发模式（Mock）**
+**开发模式（Mock）** — 返回虚拟结果，便于无 GPU 测试：
 ```
 XRAYGLM_MODE=mock
 ```
-返回虚拟的 X 光分析结果，用于测试。
 
-**本地部署（Local）**
-需要 14GB+ 显存：
+**本地部署（Local）** — 需 14 GB+ 显存：
 ```
 XRAYGLM_MODE=local
+XRAYGLM_CHECKPOINT_PATH=./checkpoints/XrayGLM
 ```
-详见 [XrayGLM 部署指南](#xrayglm-部署指南)
 
 ---
 
 ## 📊 诊断流程详解
 
-### 分诊阶段（Triage）
+### 1. 分诊（Triage）
 - 分析患者主诉，识别诊断意图
-- 对上传文件进行分类（X光、化验单、病历、其他图片）
-- 合并患者的过敏史信息
+- 对上传文件进行分类（X 光 / 化验单 / 病历 / 其他图片）
+- 合并患者基本信息与过敏史
 
-### 数据提取阶段（Extraction）
-并行执行以下任务：
-- **ImageAgent**：调用 XrayGLM 分析 X 光片
-- **LabAgent**：使用 Qwen-VL 识别化验单、提取指标
-- **RecordAgent**：提取病历的关键信息（既往诊断、用药、过敏等）
-- **Vision LLM**：对其他上传的医学图片进行内容提取
+### 2. 并行数据提取（Extraction）
+- **ImageAgent**：XrayGLM 分析 X 光片
+- **LabAgent**：Qwen-VL 识别化验单，提取指标
+- **RecordAgent**：提取病历关键信息
+- **Vision LLM**：其他医学图片的内容提取
 
-### 诊断阶段（Diagnosis - LLM A）
-LLM A 基于以下信息进行综合诊断：
-- 患者主诉和基本信息
-- 所有提取的检查数据
-- 之前的审核反馈（如果有驳回）
+### 3. 诊断（LLM A）
+基于主诉 + 所有检查数据 + 既往审核反馈（如有）进行综合推理。信息不足时可：
+1. 向患者追问（「重要」问题诊断必需）
+2. 向子 Agent 请求补充分析
 
-如果信息不足，LLM A 可以：
-1. **向患者追问**（如：症状持续时间、加重因素等）
-2. **请求子Agent补充分析**（如：要求影像Agent重点分析某个区域）
+### 4. 审核（LLM B）
+- **安全性**：过敏冲突、药物相互作用、剂量途径
+- **逻辑性**：证据是否支持、是否遗漏异常、推理是否自洽
 
-### 审核阶段（Review - LLM B）
-LLM B 从两个维度进行严格审核：
+审核不通过时回到第 3 步，最多 3 轮。通过后进入最终归档。
 
-**安全性审核**
-- 检查治疗方案是否与患者过敏史冲突
-- 验证药物相互作用和禁忌
-- 评估用药剂量和给药途径的安全性
-
-**逻辑性审核**
-- 诊断结论是否有充分的检查证据支持
-- 是否遗漏了重要的异常发现
-- 推理过程是否逻辑自洽
-
-如果审核不通过，LLM A 会进入下一轮修正（最多 3 轮）。
+### 5. 自动归档
+诊断结果（诊断、置信度、治疗建议）自动写入「健康档案」，可在主门户查看和编辑。
 
 ---
 
-## 🔌 API 集成
-
-系统使用 OpenAI 兼容 API，支持多种服务商：
+## 🔌 API 集成示例
 
 ```python
 from llm import LLMClient
@@ -273,19 +303,18 @@ from config import Settings
 
 settings = Settings()
 
-# 主 LLM（推理）
+# 主 LLM
 llm = LLMClient(settings)
 
-# 视觉 LLM（图像识别）
+# 视觉 LLM
 vision_llm = LLMClient(settings, use_vision_model=True)
 
-# 使用
 response = await llm.chat(messages)
-json_response = await llm.chat_json(messages)  # 返回 JSON
+json_response = await llm.chat_json(messages)
 image_text = await vision_llm.chat_with_image(
     system_prompt="...",
     user_text="...",
-    image_path="..."
+    image_path="...",
 )
 ```
 
@@ -293,23 +322,23 @@ image_text = await vision_llm.chat_with_image(
 
 ## 📝 提示词工程
 
-系统使用外置的提示词文件（在 `prompts/` 目录），便于迭代优化：
+所有提示词外置于 `prompts/`，便于迭代：
 
-- **diagnosis.txt**：LLM A 的诊断指令，包含信息不足时的追问规范
-- **review.txt**：LLM B 的审核标准清单
-- **lab_extraction.txt** 等：各子Agent的提取指令
-
-修改这些文件可以调整模型的行为，无需重新编译代码。
+- **diagnosis.txt**：LLM A 诊断指令（含追问规范、「重要」问题回答后必出诊断的硬约束）
+- **review.txt**：LLM B 审核清单
+- **triage.txt** / **lab_extraction.txt** / **record_extraction.txt**：各子 Agent 指令
 
 ---
 
 ## 🎯 关键设计
 
-- **全异步**：所有 Agent 异步执行，提高吞吐量
-- **流式 UI**：使用 Gradio 实时更新诊断进度
-- **Context 持久化**：支持用户补充信息后续诊断，不丢失前面的推理
-- **双重质控**：LLM A/B 博弈确保诊断的严谨性
-- **模块化**：Agent 独立，便于替换或扩展（如集成新的 LLM）
+- **全异步**：所有 Agent 异步执行，子 Agent 用 `asyncio.gather` 并行
+- **流式 UI**：Gradio 实时推送诊断进度
+- **Context 持久化**：用户补充信息后续对话不丢失
+- **双重质控**：LLM A/B 博弈确保诊断严谨
+- **模块解耦**：Agent / XrayGLM / LLM 客户端可独立替换
+- **本地优先**：所有健康数据存储在本地，隐私可控
+- **慢病 ↔ 用药联动**：慢病管理中的药品自动同步到全局用药列表
 
 ---
 
@@ -324,12 +353,7 @@ image_text = await vision_llm.chat_with_image(
 - GitHub: [WangRongsheng/XrayGLM](https://github.com/WangRongsheng/XrayGLM)
 - HuggingFace: [WangRongsheng/XrayGLM](https://huggingface.co/WangRongsheng/XrayGLM)
 
-**部署说明**
-详见项目根目录的部署文档。
-
 ### 引用格式
-
-如果你在科研或临床决策中使用了本系统的 XrayGLM 分析结果，请引用：
 
 ```bibtex
 @article{wang2023xrayglm,
@@ -339,6 +363,28 @@ image_text = await vision_llm.chat_with_image(
   year={2023}
 }
 ```
+
+---
+
+## ⚡ 常见问题
+
+**Q: 健康数据存储在哪里？会上传到云端吗？**
+A: 所有数据存储在本地 `~/.medagent/` 下，不会上传到任何云端。
+
+**Q: 为什么诊断结果与我的医生不同？**
+A: 本系统是 AI 辅助工具，诊断可能受限于 LLM 的知识和输入数据的质量。请始终咨询持证医师。
+
+**Q: 支持哪些医学影像格式？**
+A: PNG、JPG、JPEG、BMP、TIFF。其他格式请转换后上传。
+
+**Q: 诊断自动归档到健康档案的内容能修改吗？**
+A: 可以。在「健康档案」模块点击任一记录的编辑按钮即可修改。
+
+**Q: 慢病里的用药和「用药管理」里的是同一份吗？**
+A: 保存慢病时会把关联用药同步到「用药管理」全局列表，并打上橙色标签标注所属慢病；用药打卡统一在「用药管理」进行。
+
+**Q: 可以批量处理患者吗？**
+A: 当前版本为单用户设计。如有需求，欢迎开 Issue 讨论。
 
 ---
 
@@ -354,26 +400,4 @@ image_text = await vision_llm.chat_with_image(
 
 ---
 
-## ⚡ 常见问题
-
-**Q: 为什么诊断结果与我的医生不同？**  
-A: 本系统是 AI 辅助工具，诊断可能受限于 LLM 的知识和输入数据的质量。请始终咨询持证医师。
-
-**Q: 支持哪些医学影像格式？**  
-A: 目前支持 PNG、JPG、JPEG、BMP、TIFF。其他格式请转换后上传。
-
-**Q: 诊断失败了怎么办？**  
-A: 检查是否提供了足够的患者信息和医学文件。如果 LLM 反复追问但患者无法回答，可能表明信息真的不足，此时应咨询医生。
-
-**Q: 可以批量处理患者吗？**  
-A: 当前版本不支持批量处理。如有需求，欢迎开 Issue 讨论。
-
----
-
-## 📞 联系方式
-
-如有问题或建议，请提交 Issue 或通过邮件联系。
-
----
-
-**最后提醒**：本系统仅供学习和研究使用，任何医疗决策必须由专业医师做出。祝你使用愉快！💊
+**最后提醒**：本系统仅供学习和研究使用，任何医疗决策必须由专业医师做出。祝你健康！💊
